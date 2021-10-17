@@ -17,12 +17,14 @@ logging.basicConfig(
     handlers=[StreamHandler(stream=sys.stdout)]
 )
 
-PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+PRAKTIKUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+PRAKTIKUM_AUTH = {'Authorization': f'OAuth {PRAKTIKUM_TOKEN}'}
+PRAKTIKUM_ENDPOINT = os.getenv('PRAKTIKUM_ENDPOINT')
+
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_TIME = 60 * 10
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -45,36 +47,41 @@ class ApiStatusUndocumented(Exception):
 
 def send_message(bot, message):
     """При изменении статуса домашки отправляет сообщение пользователю."""
-    bot = telegram.Bot(TELEGRAM_TOKEN)
-    bot.send_message(chat_id=CHAT_ID, text=message)
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    except requests.exceptions.RequestException as error:
+        message = f'Сбой в работе API сервиса: {error}'
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        logging.error(f'Сообщение об ошибке отправлено {message}')
     logging.info(f'Сообщение успешно отправлено {message}')
 
 
 def get_api_answer(url, current_timestamp):
     """Отправляет запрос к API домашки на ENDPOINT."""
-    url = ENDPOINT
-    headers = {
-        'Authorization': f'OAuth {PRACTICUM_TOKEN}'
-    }
-    payload = {'from_date': current_timestamp}
-    response = requests.get(
-        url,
-        headers=headers,
-        params=payload
-    )
+    try:
+        payload = {'from_date': current_timestamp}
+        response = requests.get(
+            PRAKTIKUM_ENDPOINT,
+            headers=PRAKTIKUM_AUTH,
+            params=payload
+        )
+    except requests.exceptions.RequestException as error:
+        logging.error(f'Сбой в работе API сервиса: {error}')
+    except Exception as error:
+        logging.error(f'Неккоректный тип данных в ответе от API: {error}')
     if response.status_code != 200:
-        logging.error(
-            f'HTTPStatus is not OK: {response.status_code}')
+        logging.error(f'HTTPStatus is not OK: {response.status_code}')
         raise HTTPStatusIsNot200(
-            f'Эндпоинт {ENDPOINT} недоступен. '
-            f'Код ответа API: {response.status_code}')
+            f'Эндпоинт {PRAKTIKUM_ENDPOINT} недоступен.'
+            f'Код ответа API: {response.status_code}'
+        )
     return response.json()
 
 
 def parse_status(homework):
     """При изменении статуса домашки - анализирует его."""
-    verdict = HOMEWORK_STATUSES.get(homework.get('status'))
-    homework_name = homework.get('homework_name')
+    verdict = HOMEWORK_STATUSES[homework['status']]
+    homework_name = homework['homework_name']
     if verdict is not None:
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -82,20 +89,20 @@ def parse_status(homework):
 def check_response(response):
     """После запроса к API домашки проверяет не изменился ли статус."""
     homeworks = response.get('homeworks')[0]
-    homework = homeworks.get('status')
-    if homework not in HOMEWORK_STATUSES:
+    status = homeworks.get('status')
+    if status not in HOMEWORK_STATUSES:
         logging.error(
-            f'Недокументированный статус домашней работы: {homework}'
+            f'Недокументированный статус домашней работы: {status}'
         )
         raise ApiStatusUndocumented(
-            f'Недокументированный статус домашней работы: {homework}'
+            f'Недокументированный статус домашней работы: {status}'
         )
-    return homework
+    return status
 
 
 def check_tokens():
     """Проверка наличия переменных окружения."""
-    if PRACTICUM_TOKEN and TELEGRAM_TOKEN is None:
+    if PRAKTIKUM_TOKEN and TELEGRAM_TOKEN is None:
         logging.critical(
             'Отсутствует обязательная переменная окружения.'
             'Программа принудительно остановлена.')
@@ -110,8 +117,8 @@ def main():
     errors = True
     while True:
         try:
-            response = get_api_answer(ENDPOINT, current_timestamp)
-            if response.get('homeworks') == []:
+            response = get_api_answer(current_timestamp)
+            if not response.get('homeworks') == []:
                 time.sleep(RETRY_TIME)
                 continue
             check_response(response)
@@ -127,7 +134,6 @@ def main():
                 send_message(bot, message)
             time.sleep(RETRY_TIME)
             current_timestamp = int(time.time() - RETRY_TIME)
-            continue
 
 
 if __name__ == '__main__':
