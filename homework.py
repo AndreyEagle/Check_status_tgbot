@@ -3,6 +3,7 @@ import logging.handlers
 import os
 import sys
 import time
+from json.decoder import JSONDecodeError
 from logging import StreamHandler
 
 import requests
@@ -19,12 +20,12 @@ logging.basicConfig(
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 PRAСTIСUM_AUTH = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
+PRACTICUM_ENDPOINT = os.getenv('PRACTICUM_ENDPOINT')
+PRACTICUM_RETRY_TIME = 60 * 10
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 60 * 10
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -52,7 +53,7 @@ def send_message(bot, message):
     except requests.exceptions.RequestException as error:
         message = f'Сбой в работе API сервиса: {error}'
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logging.error(f'Сообщение об ошибке отправлено {message}')
+        logging.info(f'Сообщение об ошибке отправлено {message}')
     logging.info(f'Сообщение успешно отправлено {message}')
 
 
@@ -61,29 +62,30 @@ def get_api_answer(url, current_timestamp):
     try:
         payload = {'from_date': current_timestamp}
         response = requests.get(
-            ENDPOINT,
+            PRACTICUM_ENDPOINT,
             headers=PRAСTIСUM_AUTH,
             params=payload
         )
     except requests.exceptions.RequestException as error:
         logging.error(f'Сбой в работе API сервиса: {error}')
-    except Exception as error:
-        logging.error(f'Некорректный тип данных в ответе от API: {error}')
     if response.status_code != 200:
         logging.error(f'HTTPStatus is not OK: {response.status_code}')
         raise HTTPStatusIsNot200(
-            f'Эндпоинт {ENDPOINT} недоступен.'
+            f'Эндпоинт {PRACTICUM_ENDPOINT} недоступен.'
             f'Код ответа API: {response.status_code}'
         )
-    return response.json()
+    try:
+        return response.json()
+    except JSONDecodeError as error:
+        logging.error(f'Ответ от API пришел не в формате JSON: {error}')
+        return {}
 
 
 def parse_status(homework):
     """При изменении статуса домашки - анализирует его."""
     verdict = HOMEWORK_STATUSES[homework['status']]
     homework_name = homework['homework_name']
-    if verdict is not None:
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_response(response):
@@ -98,6 +100,12 @@ def check_response(response):
             f'Недокументированный статус домашней работы: {status}'
         )
     return status
+
+
+def get_current_timestamp():
+    """Обновляет временную метку."""
+    current_timestamp = int(time.time() - PRACTICUM_RETRY_TIME)
+    return current_timestamp
 
 
 def check_tokens():
@@ -117,25 +125,23 @@ def main():
     errors = True
     while True:
         try:
-            response = get_api_answer(ENDPOINT, current_timestamp)
-            print('response')
-            print(response)
+            response = get_api_answer(PRACTICUM_ENDPOINT, current_timestamp)
             if not response.get('homeworks'):
-                time.sleep(RETRY_TIME)
+                time.sleep(PRACTICUM_RETRY_TIME)
                 continue
             check_response(response)
             message = parse_status(response.get('homeworks')[0])
             send_message(bot, message)
-            time.sleep(RETRY_TIME)
-            current_timestamp = int(time.time() - RETRY_TIME)
+            time.sleep(PRACTICUM_RETRY_TIME)
+            get_current_timestamp()
         except Exception as error:
             message = f'Сбой в работе телеграмм-бота: {error}'
             logging.info(f'Уведомление об ошибке отправлено в чат {message}')
             if errors:
                 errors = False
                 send_message(bot, message)
-            time.sleep(RETRY_TIME)
-            current_timestamp = int(time.time() - RETRY_TIME)
+            time.sleep(PRACTICUM_RETRY_TIME)
+            get_current_timestamp()
 
 
 if __name__ == '__main__':
