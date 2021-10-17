@@ -17,14 +17,14 @@ logging.basicConfig(
     handlers=[StreamHandler(stream=sys.stdout)]
 )
 
-PRAKTIKUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
-PRAKTIKUM_AUTH = {'Authorization': f'OAuth {PRAKTIKUM_TOKEN}'}
-PRAKTIKUM_ENDPOINT = os.getenv('PRAKTIKUM_ENDPOINT')
+PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+PRAСTIСUM_AUTH = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_TIME = 60 * 10
+ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -61,18 +61,18 @@ def get_api_answer(url, current_timestamp):
     try:
         payload = {'from_date': current_timestamp}
         response = requests.get(
-            PRAKTIKUM_ENDPOINT,
-            headers=PRAKTIKUM_AUTH,
+            ENDPOINT,
+            headers=PRAСTIСUM_AUTH,
             params=payload
         )
     except requests.exceptions.RequestException as error:
         logging.error(f'Сбой в работе API сервиса: {error}')
     except Exception as error:
-        logging.error(f'Неккоректный тип данных в ответе от API: {error}')
+        logging.error(f'Некорректный тип данных в ответе от API: {error}')
     if response.status_code != 200:
         logging.error(f'HTTPStatus is not OK: {response.status_code}')
         raise HTTPStatusIsNot200(
-            f'Эндпоинт {PRAKTIKUM_ENDPOINT} недоступен.'
+            f'Эндпоинт {ENDPOINT} недоступен.'
             f'Код ответа API: {response.status_code}'
         )
     return response.json()
@@ -102,7 +102,7 @@ def check_response(response):
 
 def check_tokens():
     """Проверка наличия переменных окружения."""
-    if PRAKTIKUM_TOKEN and TELEGRAM_TOKEN is None:
+    if PRACTICUM_TOKEN and TELEGRAM_TOKEN is None:
         logging.critical(
             'Отсутствует обязательная переменная окружения.'
             'Программа принудительно остановлена.')
@@ -117,8 +117,10 @@ def main():
     errors = True
     while True:
         try:
-            response = get_api_answer(current_timestamp)
-            if not response.get('homeworks') == []:
+            response = get_api_answer(ENDPOINT, current_timestamp)
+            print('response')
+            print(response)
+            if not response.get('homeworks'):
                 time.sleep(RETRY_TIME)
                 continue
             check_response(response)
