@@ -20,7 +20,9 @@ logging.basicConfig(
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 PRAСTIСUM_AUTH = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-PRACTICUM_ENDPOINT = os.getenv('PRACTICUM_ENDPOINT')
+PRACTICUM_ENDPOINT = (
+    'https://practicum.yandex.ru/api/user_api/homework_statuses/'
+)
 PRACTICUM_RETRY_TIME = 60 * 10
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
