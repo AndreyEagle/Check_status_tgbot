@@ -24,7 +24,6 @@ PRACTICUM_ENDPOINT = (
     'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 )
 PRACTICUM_RETRY_TIME = 60 * 10
-
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
@@ -93,7 +92,7 @@ def parse_status(homework):
 def check_response(response):
     """После запроса к API домашки проверяет не изменился ли статус."""
     homeworks = response.get('homeworks')[0]
-    status = homeworks.get('status')
+    status = homeworks['status']
     if status not in HOMEWORK_STATUSES:
         logging.error(
             f'Недокументированный статус домашней работы: {status}'
@@ -134,6 +133,7 @@ def main():
             check_response(response)
             message = parse_status(response.get('homeworks')[0])
             send_message(bot, message)
+            current_timestamp = response.get('current_date')
             time.sleep(PRACTICUM_RETRY_TIME)
             get_current_timestamp()
         except Exception as error:
@@ -142,6 +142,7 @@ def main():
             if errors:
                 errors = False
                 send_message(bot, message)
+            current_timestamp = response.get('current_date')
             time.sleep(PRACTICUM_RETRY_TIME)
             get_current_timestamp()
 
